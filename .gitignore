@@ -1,0 +1,88 @@
+# ============================================================
+# Build output
+# ============================================================
+
+build/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+Makefile
+
+# CMake user-specific presets
+CMakeUserPresets.json
+
+# Ninja
+.ninja_deps
+.ninja_log
+
+# ============================================================
+# Compiled binaries / generated output
+# ============================================================
+
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+
+# Object / dependency files
+*.o
+*.obj
+*.d
+
+# GCC generated files
+*.su
+
+# ============================================================
+# VS Code
+# ============================================================
+
+# Keep project-wide build/debug configuration:
+# .vscode/tasks.json
+# .vscode/launch.json
+
+.vscode/settings.json
+.vscode/*.code-workspace
+
+# ============================================================
+# Keil / MDK
+# ============================================================
+
+*.uvguix.*
+*.uvoptx
+*.uvprojx
+*.scvd
+*.sct
+
+Objects/
+Listings/
+
+# ============================================================
+# STM32CubeIDE
+# ============================================================
+
+Debug/
+Release/
+.settings/
+.project
+.cproject
+
+# ============================================================
+# OS generated files
+# ============================================================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================================
+# Temporary / backup files
+# ============================================================
+
+*.tmp
+*.temp
+*.bak
+*~
