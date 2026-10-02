@@ -1,0 +1,34 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug STM32F103C8T6",
+            "type": "cortex-debug",
+            "request": "launch",
+
+            "cwd": "${workspaceFolder}",
+            "executable": "${workspaceFolder}/build/Debug/STM32_Cmake_Base.elf",
+
+            "servertype": "openocd",
+            "serverpath": "openocd",
+
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32f1x.cfg"
+            ],
+
+            "serverArgs": [
+                "-c",
+                "transport select hla_swd",
+                "-c",
+                "tcl_port 6667"
+            ],
+
+            "preLaunchTask": "CMake: Build Debug",
+
+            "runToEntryPoint": "main",
+
+            "showDevDebugOutput": "raw"
+        }
+    ]
+}

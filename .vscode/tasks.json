@@ -1,0 +1,59 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMake: Build Debug",
+            "type": "shell",
+            "command": "cmake --build --preset Debug",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "CMake: Clean",
+            "type": "shell",
+            "command": "cmake --build --preset Debug --target clean",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "OpenOCD: Flash",
+            "type": "shell",
+            "command": "arm-none-eabi-gdb",
+            "args": [
+                "-batch",
+                "${workspaceFolder}/build/Debug/STM32_Cmake_Base.elf",
+                "-ex",
+                "target extended-remote localhost:3333",
+                "-ex",
+                "monitor reset halt",
+                "-ex",
+                "load",
+                "-ex",
+                "monitor reset run",
+                "-ex",
+                "detach"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build + Flash",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "CMake: Build Debug",
+                "OpenOCD: Flash"
+            ],
+            "problemMatcher": []
+        }
+    ]
+}
