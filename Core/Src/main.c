@@ -94,80 +94,47 @@ int main(void)
   MX_USART1_UART_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
+  mpu6050_Init();
+  HAL_Delay(60000);
+  mpu6050_Calibrate();
+  mpu6050_TimingInit();
   Servo_Init();
+  
   /* USER CODE END 2 */
-
-  /* Infinite loop */
+  uint32_t uartTransmitTimer = 0;
+  /* Infinite loop */ 
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    if (mpu6050_dataReady)
+    {
+        float dt;
+
+        __disable_irq();
+        mpu6050_dataReady = 0;
+        __enable_irq();
+
+        dt = mpu6050_GetDeltaTime();
+
+        if (mpu6050_readMotion6())
+        {
+            mpu6050_updateQuaternion(dt);
+
+            static uint8_t uartDiv = 0;
+
+            uartDiv++;
+
+            if (uartDiv >= 100)
+            {
+                uartDiv = 0;
+                MPU6050_SendUART();
+            }
+        }
+    }
+    
     /* USER CODE END WHILE */
     
-    /* USER CODE BEGIN 3 */
-    Servo_SetPulseUs(SERVO_1, 1000);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1100);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1200);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1300);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1400);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1500);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1600);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1700);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1800);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1900);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 2000);
-    HAL_Delay(1000);
-
-    // Quay ngược lại
-    Servo_SetPulseUs(SERVO_1, 1900);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1800);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1700);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1600);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1500);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1400);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1300);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1200);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1100);
-    HAL_Delay(1000);
-
-    Servo_SetPulseUs(SERVO_1, 1000);
-    HAL_Delay(1000);
-
+    /* USER CODE BEGIN 3 */  
   }
   /* USER CODE END 3 */
 }

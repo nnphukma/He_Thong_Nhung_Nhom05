@@ -46,6 +46,14 @@ enable_language(C ASM)
 add_executable(${CMAKE_PROJECT_NAME})
 
 # ============================================================
+# Linker options
+# ============================================================
+
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+    -u _printf_float
+)
+
+# ============================================================
 # STM32CubeMX generated code
 # ============================================================
 
