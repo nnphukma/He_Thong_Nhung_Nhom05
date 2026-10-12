@@ -74,7 +74,7 @@ int main(void)
 
   /* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  /* Reset of all peripherals, Initializesthe Flash interface and the Systick. */
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -93,16 +93,17 @@ int main(void)
   MX_I2C1_Init();
   MX_USART1_UART_Init();
   MX_TIM2_Init();
+  MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
   mpu6050_Init();
-  HAL_Delay(60000);
+  HAL_Delay(20000);
   mpu6050_Calibrate();
   mpu6050_TimingInit();
   Servo_Init();
   
   /* USER CODE END 2 */
-  uint32_t uartTransmitTimer = 0;
-  /* Infinite loop */ 
+
+  /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
@@ -133,8 +134,8 @@ int main(void)
     }
     
     /* USER CODE END WHILE */
-    
-    /* USER CODE BEGIN 3 */  
+
+    /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
 }

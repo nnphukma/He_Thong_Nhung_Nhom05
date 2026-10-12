@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <math.h>
 
+#define RAD2DEG   57.2957795130823f
+
 /* ============================================================
  * Global sensor data
  * ============================================================ */
@@ -20,11 +22,15 @@ float GX_calib = 0.0f;
 float GY_calib = 0.0f;
 float GZ_calib = 0.0f;
 
-/* Quaternion */
+/* Quaternion (tao tu roll/pitch, yaw = 0) */
 float qw = 1.0f;
 float qx = 0.0f;
 float qy = 0.0f;
 float qz = 0.0f;
+
+/* Goc Kalman [deg] */
+float roll_deg  = 0.0f;
+float pitch_deg = 0.0f;
 
 /* MPU6050 status */
 volatile uint8_t mpu6050_dataReady = 0;
@@ -36,6 +42,80 @@ uint8_t mpu6050_whoAmI = 0x00;
 /* DWT timing */
 static uint32_t mpu6050_lastUpdateCycle = 0;
 static uint8_t mpu6050_timingReady = 0;
+
+
+/* ============================================================
+ * Kalman filter (2 state: angle, gyro bias) - 1 bo cho moi truc
+ * ============================================================ */
+
+typedef struct
+{
+    float angle;     /* goc uoc luong [deg]        */
+    float bias;      /* bias gyro con du [deg/s]   */
+    float P[2][2];   /* hiep phuong sai sai so     */
+} Kalman_t;
+
+static Kalman_t kRoll;
+static Kalman_t kPitch;
+static uint8_t  kalmanInitialized = 0;
+
+
+static void Kalman_Reset(Kalman_t *k, float angle)
+{
+    k->angle = angle;
+    k->bias  = 0.0f;
+
+    k->P[0][0] = 1.0f;
+    k->P[0][1] = 0.0f;
+    k->P[1][0] = 0.0f;
+    k->P[1][1] = 1.0f;
+}
+
+
+/*
+ * rate     : toc do goc gyro da tru bias hieu chuan [deg/s]
+ * meas     : goc do tu accelerometer [deg]
+ * useMeas  : 0 = chi predict (accel khong dang tin cay)
+ */
+static void Kalman_Step(Kalman_t *k, float rate, float meas, float dt, uint8_t useMeas)
+{
+    /* ---------- PREDICT ---------- */
+    k->angle += dt * (rate - k->bias);
+
+    k->P[0][0] += dt * (dt * k->P[1][1] - k->P[0][1] - k->P[1][0] + KALMAN_Q_ANGLE);
+    k->P[0][1] -= dt * k->P[1][1];
+    k->P[1][0] -= dt * k->P[1][1];
+    k->P[1][1] += KALMAN_Q_BIAS * dt;
+
+    /* ---------- UPDATE ---------- */
+    if (useMeas)
+    {
+        float y = meas - k->angle;
+
+        /* xu ly nhay vong +/-180 */
+        if (y > 180.0f)  y -= 360.0f;
+        if (y < -180.0f) y += 360.0f;
+
+        float S  = k->P[0][0] + KALMAN_R_MEAS;
+        float K0 = k->P[0][0] / S;
+        float K1 = k->P[1][0] / S;
+
+        k->angle += K0 * y;
+        k->bias  += K1 * y;
+
+        float P00 = k->P[0][0];
+        float P01 = k->P[0][1];
+
+        k->P[0][0] -= K0 * P00;
+        k->P[0][1] -= K0 * P01;
+        k->P[1][0] -= K1 * P00;
+        k->P[1][1] -= K1 * P01;
+    }
+
+    /* Giu goc trong (-180, 180] */
+    if (k->angle > 180.0f)   k->angle -= 360.0f;
+    if (k->angle <= -180.0f) k->angle += 360.0f;
+}
 
 
 /* ============================================================
@@ -83,7 +163,7 @@ float mpu6050_GetDeltaTime(void)
 
 
 /* ============================================================
- * MPU6050 Initialization
+ * MPU6050 Initialization (khong doi so voi ban Mahony)
  * ============================================================ */
 
 uint8_t mpu6050_Init(void)
@@ -94,13 +174,7 @@ uint8_t mpu6050_Init(void)
     HAL_Delay(100);
 
     /* WHO_AM_I */
-    if (HAL_I2C_Mem_Read(&hi2c1,
-                         MPU6050_ADDR,
-                         0x75,
-                         1,
-                         &check,
-                         1,
-                         10) != HAL_OK)
+    if (HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x75, 1, &check, 1, 10) != HAL_OK)
     {
         mpu6050_whoAmI = 0x00;
         return 0;
@@ -111,116 +185,49 @@ uint8_t mpu6050_Init(void)
     if (check != 0x68 && check != 0x74)
         return 0;
 
-    /* Wake up MPU6050 */
+    /* Wake up MPU6050 (clock source = PLL gyro X) */
     mData = 0x01;
-
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x6B,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x6B, 1, &mData, 1, 10) != HAL_OK)
         return 0;
-    }
 
     HAL_Delay(10);
 
-    /* Sample Rate Divider
-     * 1 kHz / (1 + 4) = 200 Hz
-     */
+    /* Sample Rate Divider: 1 kHz / (1 + 4) = 200 Hz */
     mData = 0x04;
-
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x19,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x19, 1, &mData, 1, 10) != HAL_OK)
         return 0;
-    }
 
     /* DLPF */
     mData = 0x03;
-
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x1A,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x1A, 1, &mData, 1, 10) != HAL_OK)
         return 0;
-    }
 
     /* Gyroscope ±250 °/s */
     mData = 0x00;
-
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x1B,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x1B, 1, &mData, 1, 10) != HAL_OK)
         return 0;
-    }
 
     /* Accelerometer ±2g */
     mData = 0x00;
-
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x1C,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x1C, 1, &mData, 1, 10) != HAL_OK)
         return 0;
-    }
 
-    /* INT pin:
-     * Push-pull, active high
-     */
+    /* INT pin: push-pull, active high */
     mData = 0x30;
-
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x37,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x37, 1, &mData, 1, 10) != HAL_OK)
         return 0;
-    }
 
     /* Enable Data Ready interrupt */
     mData = 0x01;
-
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x38,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x38, 1, &mData, 1, 10) != HAL_OK)
         return 0;
-    }
 
     return 1;
 }
 
 
 /* ============================================================
- * Gyroscope Calibration
+ * Gyroscope Calibration (giu nguyen, chi reset them Kalman)
  * ============================================================ */
 
 void mpu6050_Calibrate(void)
@@ -238,13 +245,7 @@ void mpu6050_Calibrate(void)
 
     for (int i = 0; i < samples; i++)
     {
-        if (HAL_I2C_Mem_Read(&hi2c1,
-                             MPU6050_ADDR,
-                             0x43,
-                             1,
-                             data,
-                             6,
-                             10) == HAL_OK)
+        if (HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x43, 1, data, 6, 10) == HAL_OK)
         {
             int16_t raw_gx = (int16_t)((data[0] << 8) | data[1]);
             int16_t raw_gy = (int16_t)((data[2] << 8) | data[3]);
@@ -262,85 +263,53 @@ void mpu6050_Calibrate(void)
     GY_calib = ((float)gy_sum / samples) / GYRO_SENS;
     GZ_calib = ((float)gz_sum / samples) / GYRO_SENS;
 
-    /* Reset quaternion */
+    /* Reset trang thai uoc luong: lan update dau se khoi tao tu accel */
+    kalmanInitialized = 0;
+
     qw = 1.0f;
     qx = 0.0f;
     qy = 0.0f;
     qz = 0.0f;
 
+    roll_deg  = 0.0f;
+    pitch_deg = 0.0f;
+
     mpu6050_dataReady = 0;
 
-    /*
-     * Clear MPU6050 interrupt status.
-     */
-    HAL_I2C_Mem_Read(&hi2c1,
-                     MPU6050_ADDR,
-                     0x3A,
-                     1,
-                     &dummy,
-                     1,
-                     10);
+    /* Clear MPU6050 interrupt status */
+    HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x3A, 1, &dummy, 1, 10);
 }
 
 
 /* ============================================================
  * Read Accelerometer + Gyroscope
  *
- * Return:
- *   1 = successful I2C read
- *   0 = I2C read failed
+ * Return: 1 = OK, 0 = I2C failed
  * ============================================================ */
 
 uint8_t mpu6050_readMotion6(void)
 {
     uint8_t buffer[14];
 
-    /*
-     * Read:
-     *
-     * 0x3B - ACCEL_XOUT_H
-     * 0x3C - ACCEL_XOUT_L
-     * 0x3D - ACCEL_YOUT_H
-     * 0x3E - ACCEL_YOUT_L
-     * 0x3F - ACCEL_ZOUT_H
-     * 0x40 - ACCEL_ZOUT_L
-     * 0x41 - TEMP_OUT_H
-     * 0x42 - TEMP_OUT_L
-     * 0x43 - GYRO_XOUT_H
-     * 0x44 - GYRO_XOUT_L
-     * 0x45 - GYRO_YOUT_H
-     * 0x46 - GYRO_YOUT_L
-     * 0x47 - GYRO_ZOUT_H
-     * 0x48 - GYRO_ZOUT_L
-     */
-
-    if (HAL_I2C_Mem_Read(&hi2c1,
-                         MPU6050_ADDR,
-                         0x3B,
-                         1,
-                         buffer,
-                         14,
-                         10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x3B, 1, buffer, 14, 10) != HAL_OK)
         return 0;
-    }
 
     /* Accelerometer raw */
     ax_raw = (int16_t)((buffer[0] << 8) | buffer[1]);
     ay_raw = (int16_t)((buffer[2] << 8) | buffer[3]);
     az_raw = (int16_t)((buffer[4] << 8) | buffer[5]);
 
-    /* Gyroscope raw */
-    gx_raw = (int16_t)((buffer[8] << 8) | buffer[9]);
+    /* Gyroscope raw (bo qua buffer[6..7] = nhiet do) */
+    gx_raw = (int16_t)((buffer[8]  << 8) | buffer[9]);
     gy_raw = (int16_t)((buffer[10] << 8) | buffer[11]);
     gz_raw = (int16_t)((buffer[12] << 8) | buffer[13]);
 
-    /* Convert accelerometer to g */
+    /* Accelerometer -> g */
     AX = (float)ax_raw / ACCEL_SENS;
     AY = (float)ay_raw / ACCEL_SENS;
     AZ = (float)az_raw / ACCEL_SENS;
 
-    /* Convert gyroscope to °/s */
+    /* Gyroscope -> °/s */
     GX = (float)gx_raw / GYRO_SENS;
     GY = (float)gy_raw / GYRO_SENS;
     GZ = (float)gz_raw / GYRO_SENS;
@@ -350,104 +319,86 @@ uint8_t mpu6050_readMotion6(void)
 
 
 /* ============================================================
- * Mahony Quaternion Update
+ * Kalman attitude update
+ *
+ * Giu ten mpu6050_updateQuaternion() de main.c khong phai sua.
+ *
+ * Quy uoc truc giong ban Mahony (ZYX, yaw = 0):
+ *   roll  = atan2(ay, az)
+ *   pitch = atan2(-ax, sqrt(ay^2 + az^2))
+ * Hai cong thuc nay khop voi roll tinh tu quaternion
+ *   roll = atan2(2(qw*qx + qy*qz), 1 - 2(qx^2 + qy^2))
  * ============================================================ */
 
 void mpu6050_updateQuaternion(float dt)
 {
-    float ax = AX;
-    float ay = AY;
-    float az = AZ;
-
     float gx = GX - GX_calib;
     float gy = GY - GY_calib;
-    float gz = GZ - GZ_calib;
 
-    /* Gyro deadzone */
-    if (fabsf(gx) < GYRO_DEADZONE)
-        gx = 0.0f;
+    /* Gyro deadzone (hien dang = 0) */
+    if (fabsf(gx) < GYRO_DEADZONE) gx = 0.0f;
+    if (fabsf(gy) < GYRO_DEADZONE) gy = 0.0f;
 
-    if (fabsf(gy) < GYRO_DEADZONE)
-        gy = 0.0f;
+    /* Goc do tu accelerometer */
+    float acc_norm = sqrtf(AX * AX + AY * AY + AZ * AZ);
 
-    if (fabsf(gz) < GYRO_DEADZONE)
-        gz = 0.0f;
-
-    /* Normalize accelerometer */
-    float acc_norm = sqrtf(ax * ax + ay * ay + az * az);
-
-    if (acc_norm > 0.01f)
+    if (acc_norm < 0.01f)
     {
-        ax /= acc_norm;
-        ay /= acc_norm;
-        az /= acc_norm;
-
-        /*
-         * Estimated gravity direction
-         */
-        float halfvx = qx * qz - qw * qy;
-        float halfvy = qw * qx + qy * qz;
-        float halfvz = qw * qw - 0.5f + qz * qz;
-
-        /*
-         * Error between measured and estimated gravity
-         */
-        float halfex = ay * halfvz - az * halfvy;
-        float halfey = az * halfvx - ax * halfvz;
-        float halfez = ax * halfvy - ay * halfvx;
-
-        /* Mahony integral term */
-        static float integral_x = 0.0f;
-        static float integral_y = 0.0f;
-        static float integral_z = 0.0f;
-
-        integral_x += MAHONY_KI * halfex * dt;
-        integral_y += MAHONY_KI * halfey * dt;
-        integral_z += MAHONY_KI * halfez * dt;
-
-        /*
-         * Correct gyro
-         */
-        gx += MAHONY_KP * halfex + integral_x;
-        gy += MAHONY_KP * halfey + integral_y;
-        gz += MAHONY_KP * halfez + integral_z;
+        /* Du lieu accel khong hop le: chi predict neu da khoi tao */
+        if (kalmanInitialized)
+        {
+            Kalman_Step(&kRoll,  gx, 0.0f, dt, 0);
+            Kalman_Step(&kPitch, gy, 0.0f, dt, 0);
+        }
+        goto make_quaternion;
     }
 
-    /* °/s -> rad/s */
-    gx *= 0.0174532925199433f;
-    gy *= 0.0174532925199433f;
-    gz *= 0.0174532925199433f;
+    float accRoll  = atan2f(AY, AZ) * RAD2DEG;
+    float accPitch = atan2f(-AX, sqrtf(AY * AY + AZ * AZ)) * RAD2DEG;
 
-    /* Quaternion derivative */
-    float qDotw = 0.5f * (-qx * gx - qy * gy - qz * gz);
-    float qDotx = 0.5f * (qw * gx + qy * gz - qz * gy);
-    float qDoty = 0.5f * (qw * gy - qx * gz + qz * gx);
-    float qDotz = 0.5f * (qw * gz + qx * gy - qy * gx);
-
-    /* Integrate */
-    qw += qDotw * dt;
-    qx += qDotx * dt;
-    qy += qDoty * dt;
-    qz += qDotz * dt;
-
-    /* Normalize quaternion */
-    float q_norm = sqrtf(qw * qw +
-                         qx * qx +
-                         qy * qy +
-                         qz * qz);
-
-    if (q_norm > 0.0f)
+    if (!kalmanInitialized)
     {
-        qw /= q_norm;
-        qx /= q_norm;
-        qy /= q_norm;
-        qz /= q_norm;
+        /* Lan dau: lay goc tu accel lam diem bat dau */
+        Kalman_Reset(&kRoll,  accRoll);
+        Kalman_Reset(&kPitch, accPitch);
+        kalmanInitialized = 1;
     }
+    else
+    {
+        /* Chi tin accel khi khung khong bi gia toc manh */
+        uint8_t accOk = (fabsf(acc_norm - 1.0f) < ACC_GATE) ? 1 : 0;
+
+        /*
+         * Gyro X -> toc do roll, Gyro Y -> toc do pitch
+         * (xap xi goc nho; du cho gimbal +/-30 do)
+         */
+        Kalman_Step(&kRoll,  gx, accRoll,  dt, accOk);
+        Kalman_Step(&kPitch, gy, accPitch, dt, accOk);
+    }
+
+make_quaternion:
+
+    roll_deg  = kRoll.angle;
+    pitch_deg = kPitch.angle;
+
+    /* Euler (yaw = 0) -> quaternion [qw qx qy qz] */
+    float hr = 0.5f * roll_deg  / RAD2DEG;
+    float hp = 0.5f * pitch_deg / RAD2DEG;
+
+    float cr = cosf(hr);
+    float sr = sinf(hr);
+    float cp = cosf(hp);
+    float sp = sinf(hp);
+
+    qw =  cr * cp;
+    qx =  sr * cp;
+    qy =  cr * sp;
+    qz = -sr * sp;
 }
 
 
 /* ============================================================
- * UART CSV Debug
+ * UART CSV Debug (giu nguyen dinh dang de script phan tich cu van dung)
  *
  * Format:
  * Time,GX,GY,GZ,QW,QX,QY,QZ
@@ -462,13 +413,9 @@ void MPU6050_SendUART(void)
 
     if (!headerSent)
     {
-        const char *header =
-            "Time,GX,GY,GZ,QW,QX,QY,QZ\r\n";
+        const char *header = "Time,GX,GY,GZ,QW,QX,QY,QZ\r\n";
 
-        HAL_UART_Transmit(&huart1,
-                          (uint8_t *)header,
-                          strlen(header),
-                          100);
+        HAL_UART_Transmit(&huart1, (uint8_t *)header, strlen(header), 100);
 
         headerSent = 1;
     }
@@ -487,10 +434,7 @@ void MPU6050_SendUART(void)
 
     if (len > 0)
     {
-        HAL_UART_Transmit(&huart1,
-                          (uint8_t *)buffer,
-                          len,
-                          100);
+        HAL_UART_Transmit(&huart1, (uint8_t *)buffer, len, 100);
     }
 }
 
@@ -503,10 +447,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == MPU6050_PIN_INT)
     {
-        /*
-         * If main loop has not processed the previous sample
-         * before the next interrupt arrives, count it as missed.
-         */
         if (mpu6050_dataReady)
             mpu6050_missedSamples++;
 
