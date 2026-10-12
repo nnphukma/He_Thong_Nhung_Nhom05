@@ -28,7 +28,9 @@
 
             "runToEntryPoint": "main",
 
-            "showDevDebugOutput": "raw"
+            "showDevDebugOutput": "raw",
+
+            "liveWatch": { "enabled": true, "samplesPerSecond": 10  }
         }
     ]
 }

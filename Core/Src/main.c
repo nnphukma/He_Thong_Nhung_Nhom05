@@ -27,6 +27,8 @@
 /* USER CODE BEGIN Includes */
 #include "mpu6050.h"
 #include "servo.h"
+#include "gimbal.h"
+#include "stdio.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -53,7 +55,7 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+void I2C_Bus_Clear(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -90,51 +92,50 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+
+  I2C_Bus_Clear();
+
   MX_I2C1_Init();
   MX_USART1_UART_Init();
   MX_TIM2_Init();
+  MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
   mpu6050_Init();
-  HAL_Delay(60000);
+  HAL_Delay(10000);
   mpu6050_Calibrate();
   mpu6050_TimingInit();
   Servo_Init();
-  
+
+  Servo_SetAngle(SERVO_1, 100.0f); // Servo 1: Roll -> center 
+  Servo_SetAngle(SERVO_2, 90.0f); // Servo 2: Pitch -> center
+
+  Gimbal_Init();
+
   /* USER CODE END 2 */
-  uint32_t uartTransmitTimer = 0;
-  /* Infinite loop */ 
+
+  /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    if (mpu6050_dataReady)
+   if (mpu6050_dataReady ||
+        HAL_GPIO_ReadPin(MPU6050_INT_PORT, MPU6050_PIN_INT) == GPIO_PIN_SET)
     {
-        float dt;
-
-        __disable_irq();
         mpu6050_dataReady = 0;
-        __enable_irq();
-
-        dt = mpu6050_GetDeltaTime();
 
         if (mpu6050_readMotion6())
         {
+            float dt = mpu6050_GetDeltaTime();
+
             mpu6050_updateQuaternion(dt);
+            Gimbal_Update(dt);
 
-            static uint8_t uartDiv = 0;
-
-            uartDiv++;
-
-            if (uartDiv >= 100)
-            {
-                uartDiv = 0;
-                MPU6050_SendUART();
-            }
+            /* Gửi UART khi cần debug */
+            //MPU6050_SendUART();
         }
     }
-    
     /* USER CODE END WHILE */
-    
-    /* USER CODE BEGIN 3 */  
+
+    /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
 }
@@ -179,7 +180,41 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+void I2C_Bus_Clear(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
 
+    // 1. Bật Clock GPIO cho chân I2C (Ví dụ PB6=SCL, PB7=SDA)
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+
+    // 2. Cấu hình tạm PB6 (SCL) và PB7 (SDA) thành GPIO Output Open-Drain
+    GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    // Kéo cả 2 chân lên HIGH
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_SET);
+    HAL_Delay(1);
+
+    // 3. Nếu SDA bị giữ LOW, dập 9 xung Clock để MPU6050 nhả bus
+    for (int i = 0; i < 9; i++) {
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET); // SCL LOW
+        HAL_Delay(1);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);   // SCL HIGH
+        HAL_Delay(1);
+    }
+
+    // 4. Phát điều kiện STOP (SDA từ LOW lên HIGH khi SCL đang HIGH)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_RESET);
+    HAL_Delay(1);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
+    HAL_Delay(1);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_SET);
+    HAL_Delay(1);
+}
 /* USER CODE END 4 */
 
 /**

@@ -94,13 +94,7 @@ uint8_t mpu6050_Init(void)
     HAL_Delay(100);
 
     /* WHO_AM_I */
-    if (HAL_I2C_Mem_Read(&hi2c1,
-                         MPU6050_ADDR,
-                         0x75,
-                         1,
-                         &check,
-                         1,
-                         10) != HAL_OK)
+    if (HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x75, 1, &check, 1, 10) != HAL_OK)
     {
         mpu6050_whoAmI = 0x00;
         return 0;
@@ -108,20 +102,12 @@ uint8_t mpu6050_Init(void)
 
     mpu6050_whoAmI = check;
 
-    if (check != 0x68 && check != 0x74)
-        return 0;
+    if (check != 0x68 && check != 0x74) return 0;
 
     /* Wake up MPU6050 */
     mData = 0x01;
 
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x6B,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x6B, 1, &mData, 1, 10) != HAL_OK){
         return 0;
     }
 
@@ -132,86 +118,44 @@ uint8_t mpu6050_Init(void)
      */
     mData = 0x04;
 
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x19,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x19, 1, &mData, 1, 10) != HAL_OK){
         return 0;
     }
 
     /* DLPF */
     mData = 0x03;
 
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x1A,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x1A, 1, &mData, 1, 10) != HAL_OK){
         return 0;
     }
 
     /* Gyroscope ±250 °/s */
     mData = 0x00;
 
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x1B,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x1B, 1, &mData, 1, 10) != HAL_OK){
         return 0;
     }
 
     /* Accelerometer ±2g */
     mData = 0x00;
 
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x1C,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x1C, 1, &mData, 1, 10) != HAL_OK){
         return 0;
     }
 
-    /* INT pin:
-     * Push-pull, active high
-     */
+    /* INT pin: */
+    /* Push-pull, active h */
     mData = 0x30;
 
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x37,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x37, 1, &mData, 1, 10) != HAL_OK){
         return 0;
     }
 
-    /* Enable Data Ready interrupt */
+    // Enable Data Ready interrupt 
+
     mData = 0x01;
 
-    if (HAL_I2C_Mem_Write(&hi2c1,
-                          MPU6050_ADDR,
-                          0x38,
-                          1,
-                          &mData,
-                          1,
-                          10) != HAL_OK)
-    {
+    if (HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x38, 1, &mData, 1, 10) != HAL_OK){
         return 0;
     }
 
@@ -238,13 +182,7 @@ void mpu6050_Calibrate(void)
 
     for (int i = 0; i < samples; i++)
     {
-        if (HAL_I2C_Mem_Read(&hi2c1,
-                             MPU6050_ADDR,
-                             0x43,
-                             1,
-                             data,
-                             6,
-                             10) == HAL_OK)
+        if (HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x43, 1, data, 6, 10) == HAL_OK)
         {
             int16_t raw_gx = (int16_t)((data[0] << 8) | data[1]);
             int16_t raw_gy = (int16_t)((data[2] << 8) | data[3]);
@@ -273,13 +211,7 @@ void mpu6050_Calibrate(void)
     /*
      * Clear MPU6050 interrupt status.
      */
-    HAL_I2C_Mem_Read(&hi2c1,
-                     MPU6050_ADDR,
-                     0x3A,
-                     1,
-                     &dummy,
-                     1,
-                     10);
+    HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x3A, 1, &dummy, 1, 10);
 }
 
 
@@ -314,13 +246,7 @@ uint8_t mpu6050_readMotion6(void)
      * 0x48 - GYRO_ZOUT_L
      */
 
-    if (HAL_I2C_Mem_Read(&hi2c1,
-                         MPU6050_ADDR,
-                         0x3B,
-                         1,
-                         buffer,
-                         14,
-                         10) != HAL_OK)
+    if (HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x3B, 1, buffer, 14, 10) != HAL_OK)
     {
         return 0;
     }
@@ -364,17 +290,19 @@ void mpu6050_updateQuaternion(float dt)
     float gz = GZ - GZ_calib;
 
     /* Gyro deadzone */
-    if (fabsf(gx) < GYRO_DEADZONE)
-        gx = 0.0f;
+    if (fabsf(gx) < GYRO_DEADZONE) gx = 0.0f;
 
-    if (fabsf(gy) < GYRO_DEADZONE)
-        gy = 0.0f;
+    if (fabsf(gy) < GYRO_DEADZONE) gy = 0.0f;
 
-    if (fabsf(gz) < GYRO_DEADZONE)
-        gz = 0.0f;
+    if (fabsf(gz) < GYRO_DEADZONE) gz = 0.0f;
 
     /* Normalize accelerometer */
     float acc_norm = sqrtf(ax * ax + ay * ay + az * az);
+
+    /* °/s -> rad/s */
+    gx *= 0.0174532925199433f;
+    gy *= 0.0174532925199433f;
+    gz *= 0.0174532925199433f;
 
     if (acc_norm > 0.01f)
     {
@@ -413,10 +341,7 @@ void mpu6050_updateQuaternion(float dt)
         gz += MAHONY_KP * halfez + integral_z;
     }
 
-    /* °/s -> rad/s */
-    gx *= 0.0174532925199433f;
-    gy *= 0.0174532925199433f;
-    gz *= 0.0174532925199433f;
+    
 
     /* Quaternion derivative */
     float qDotw = 0.5f * (-qx * gx - qy * gy - qz * gz);
@@ -431,10 +356,7 @@ void mpu6050_updateQuaternion(float dt)
     qz += qDotz * dt;
 
     /* Normalize quaternion */
-    float q_norm = sqrtf(qw * qw +
-                         qx * qx +
-                         qy * qy +
-                         qz * qz);
+    float q_norm = sqrtf(qw * qw + qx * qx + qy * qy + qz * qz);
 
     if (q_norm > 0.0f)
     {
@@ -457,42 +379,39 @@ void MPU6050_SendUART(void)
 {
     static uint8_t headerSent = 0;
 
-    char buffer[160];
+    char buffer[200];
     int len;
 
     if (!headerSent)
     {
-        const char *header =
-            "Time,GX,GY,GZ,QW,QX,QY,QZ\r\n";
+        const char *header = "Time,GX,GY,GZ,QW,QX,QY,QZ,Angle_SV1,Angle_SV2\r\n";
 
-        HAL_UART_Transmit(&huart1,
-                          (uint8_t *)header,
-                          strlen(header),
-                          100);
+        HAL_UART_Transmit(&huart1, (uint8_t *)header, strlen(header), 100);
 
         headerSent = 1;
     }
 
     len = snprintf(buffer,
-                   sizeof(buffer),
-                   "%lu,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\r\n",
-                   HAL_GetTick() / 1000UL,
-                   GX - GX_calib,
-                   GY - GY_calib,
-                   GZ - GZ_calib,
-                   qw,
-                   qx,
-                   qy,
-                   qz);
+                sizeof(buffer),
+                "%lu,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.1f,%.1f\r\n",
+                HAL_GetTick() / 1000UL,
+                GX - GX_calib,
+                GY - GY_calib,
+                GZ - GZ_calib,
+                qw,
+                qx,
+                qy,
+                qz,
+                angle_sv1,
+                angle_sv2);
 
-    if (len > 0)
+    if (len > 0 && len < sizeof(buffer))
     {
-        HAL_UART_Transmit(&huart1,
-                          (uint8_t *)buffer,
-                          len,
-                          100);
+        HAL_UART_Transmit(&huart1, (uint8_t *)buffer, len, 100);
     }
 }
+
+
 
 
 /* ============================================================

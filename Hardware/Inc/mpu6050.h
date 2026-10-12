@@ -4,6 +4,7 @@
 #include "main.h"
 #include <stdint.h>
 #include <math.h>
+#include <servo.h>
 
 #define MPU6050_ADDR       0xD0U
 #define MPU6050_INT_PORT   GPIOB
