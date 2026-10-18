@@ -111,6 +111,7 @@ int main(void)
 
   Gimbal_Init();
 
+  static uint32_t last_uart_tick = 0;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -129,8 +130,11 @@ int main(void)
             mpu6050_updateQuaternion(dt);
             Gimbal_Update(dt);
 
-            /* Gửi UART khi cần debug */
-            //MPU6050_SendUART();
+            if (HAL_GetTick() - last_uart_tick >= 20)
+            {
+                last_uart_tick = HAL_GetTick();
+                MPU6050_SendEulerUART();
+            }
         }
     }
     /* USER CODE END WHILE */

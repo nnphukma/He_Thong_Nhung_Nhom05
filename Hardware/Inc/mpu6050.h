@@ -65,6 +65,9 @@ uint8_t mpu6050_readMotion6(void);
 void mpu6050_updateQuaternion(float dt);
 void MPU6050_SendUART(void);
 
+void mpu6050_GetRawEuler(float *roll_deg, float *pitch_deg);
+void mpu6050_GetQuanEuler(float *roll_deg, float *pitch_deg);
+void MPU6050_SendEulerUART(void);
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin);
 
 #endif /* __MPU6050_H */

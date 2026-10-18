@@ -368,52 +368,48 @@ void mpu6050_updateQuaternion(float dt)
 }
 
 
-/* ============================================================
- * UART CSV Debug
- *
- * Format:
- * Time,GX,GY,GZ,QW,QX,QY,QZ
- * ============================================================ */
 
-void MPU6050_SendUART(void)
+void mpu6050_GetRawEuler(float *roll_deg, float *pitch_deg)
 {
-    static uint8_t headerSent = 0;
-
-    char buffer[200];
-    int len;
-
-    if (!headerSent)
-    {
-        const char *header = "Time,GX,GY,GZ,QW,QX,QY,QZ,Angle_SV1,Angle_SV2\r\n";
-
-        HAL_UART_Transmit(&huart1, (uint8_t *)header, strlen(header), 100);
-
-        headerSent = 1;
-    }
-
-    len = snprintf(buffer,
-                sizeof(buffer),
-                "%lu,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.1f,%.1f\r\n",
-                HAL_GetTick() / 1000UL,
-                GX - GX_calib,
-                GY - GY_calib,
-                GZ - GZ_calib,
-                qw,
-                qx,
-                qy,
-                qz,
-                angle_sv1,
-                angle_sv2);
-
-    if (len > 0 && len < sizeof(buffer))
-    {
-        HAL_UART_Transmit(&huart1, (uint8_t *)buffer, len, 100);
-    }
+    *roll_deg = atan2f(AY, AZ) * 57.2957795f;
+    *pitch_deg = atan2f(-AX, sqrtf(AY * AY + AZ * AZ)) * 57.2957795f;
 }
 
+void mpu6050_GetQuanEuler(float *roll_deg, float *pitch_deg)
+{
+    float sinp = 2.0f * (qw * qy - qx * qz);
 
+    if (sinp >  1.0f) sinp =  1.0f;
+    if (sinp < -1.0f) sinp = -1.0f;
 
+    *roll_deg = atan2f(
+        2.0f * (qw * qx + qy * qz),
+        qw * qw - qx * qx - qy * qy + qz * qz
+    ) * 57.2957795f;
 
+    *pitch_deg = asinf(sinp) * 57.2957795f;
+}
+
+void MPU6050_SendEulerUART(void)
+{
+    float raw_roll, raw_pitch;
+    float quan_roll, quan_pitch;
+
+    mpu6050_GetRawEuler(&raw_roll, &raw_pitch);
+    mpu6050_GetQuanEuler(&quan_roll, &quan_pitch);
+
+    float uartData[4] = {
+        raw_roll,
+        raw_pitch,
+        quan_roll,
+        quan_pitch
+    };
+
+    uint8_t frameEnd[4] = {0x00, 0x00, 0x80, 0x7F};
+
+    HAL_UART_Transmit(&huart1, (uint8_t *)uartData, sizeof(uartData), 10);
+    HAL_UART_Transmit(&huart1, frameEnd, sizeof(frameEnd), 10);
+}
 /* ============================================================
  * MPU6050 Data Ready EXTI
  * ============================================================ */
@@ -433,3 +429,4 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         mpu6050_irqCount++;
     }
 }
+
